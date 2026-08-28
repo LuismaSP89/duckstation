@@ -115,6 +115,7 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* dialog, QWidget* 
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.chromaSmoothingFor24Bit, "GPU", "ChromaSmoothing24Bit", false);
   SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.forceRoundedTexcoords, "GPU", "ForceRoundTextureCoordinates",
                                                false);
+  SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.vramWriteFiltering, "GPU", "FilterVRAMWrites", false);
 
   connect(m_ui.renderer, &QComboBox::currentIndexChanged, this,
           &GraphicsSettingsWidget::updateRendererDependentOptions);
@@ -367,6 +368,11 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* dialog, QWidget* 
     QString::fromUtf8(Settings::GetTextureFilterDisplayName(Settings::DEFAULT_GPU_TEXTURE_FILTER)),
     tr("Smooths out the blockiness of magnified textures on 2D objects by using filtering. This filter only applies to "
        "sprites and other 2D elements, such as the HUD."));
+  dialog->registerWidgetHelp(
+    m_ui.vramWriteFiltering, tr("Filter Pre-Rendered Backgrounds (VRAM Writes)"), tr("Unchecked"),
+    tr("Applies the sprite texture filter (or the main texture filter if the sprite filter is nearest) to images "
+       "uploaded directly to VRAM by the CPU, such as pre-rendered backgrounds, similar to PeteOpenGL2Tweak's xBRZ "
+       "scaler. Requires a resolution scale above 1x. May introduce visual artifacts in some games."));
   dialog->registerWidgetHelp(
     m_ui.gpuDitheringMode, tr("Dithering"),
     QString::fromUtf8(Settings::GetGPUDitheringModeDisplayName(Settings::DEFAULT_GPU_DITHERING_MODE)),
@@ -634,6 +640,8 @@ void GraphicsSettingsWidget::updateRendererDependentOptions()
   m_ui.spriteTextureFilteringLabel->setEnabled(
     is_hardware && !m_dialog->hasGameTrait(GameDatabase::Trait::DisableTextureFiltering) &&
     !m_dialog->hasGameTrait(GameDatabase::Trait::DisableSpriteTextureFiltering));
+  m_ui.vramWriteFiltering->setEnabled(is_hardware &&
+                                      !m_dialog->hasGameTrait(GameDatabase::Trait::DisableTextureFiltering));
   m_ui.gpuDownsampleLabel->setEnabled(is_hardware);
   m_ui.gpuDownsampleMode->setEnabled(is_hardware);
   m_ui.gpuDownsampleScale->setEnabled(is_hardware);

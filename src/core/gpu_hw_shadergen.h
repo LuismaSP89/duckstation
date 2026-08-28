@@ -28,9 +28,9 @@ public:
                                           bool rov_depth_test, bool rov_depth_write) const;
   std::string GenerateWireframeGeometryShader() const;
   std::string GenerateWireframeFragmentShader() const;
-  std::string GenerateVRAMReadFragmentShader(u32 resolution_scale, u32 multisamples) const;
+  std::string GenerateVRAMReadFragmentShader(u32 resolution_scale, u32 multisamples, bool point_sample) const;
   std::string GenerateVRAMWriteFragmentShader(bool use_buffer, bool use_ssbo, bool write_mask_as_depth,
-                                              bool write_depth_as_rt) const;
+                                              bool write_depth_as_rt, GPUTextureFilter texture_filter) const;
   std::string GenerateVRAMCopyFragmentShader(bool write_mask_as_depth, bool write_depth_as_rt) const;
   std::string GenerateVRAMFillFragmentShader(bool wrapped, bool interlaced, bool write_mask_as_depth,
                                              bool write_depth_as_rt) const;

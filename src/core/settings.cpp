@@ -325,6 +325,7 @@ void Settings::Load(const SettingsInterface& si, const SettingsInterface& contro
   gpu_use_software_renderer_for_memory_states = si.GetBoolValue("GPU", "UseSoftwareRendererForMemoryStates", false);
   gpu_scaled_interlacing = si.GetBoolValue("GPU", "ScaledInterlacing", true);
   gpu_force_round_texcoords = si.GetBoolValue("GPU", "ForceRoundTextureCoordinates", false);
+  gpu_filter_vram_writes = si.GetBoolValue("GPU", "FilterVRAMWrites", false);
   gpu_texture_filter = ParseTextureFilterName(si.GetStringViewValue("GPU", "TextureFilter",
                                                                     GetTextureFilterName(DEFAULT_GPU_TEXTURE_FILTER)))
                          .value_or(DEFAULT_GPU_TEXTURE_FILTER);
@@ -737,6 +738,7 @@ void Settings::Save(SettingsInterface& si, bool ignore_user_prefs, bool for_copy
   si.SetBoolValue("GPU", "UseSoftwareRendererForMemoryStates", gpu_use_software_renderer_for_memory_states);
   si.SetBoolValue("GPU", "ScaledInterlacing", gpu_scaled_interlacing);
   si.SetBoolValue("GPU", "ForceRoundTextureCoordinates", gpu_force_round_texcoords);
+  si.SetBoolValue("GPU", "FilterVRAMWrites", gpu_filter_vram_writes);
   si.SetStringValue("GPU", "TextureFilter", GetTextureFilterName(gpu_texture_filter));
   si.SetStringValue("GPU", "SpriteTextureFilter", GetTextureFilterName(gpu_sprite_texture_filter));
   si.SetStringValue("GPU", "DitheringMode", GetGPUDitheringModeName(gpu_dithering_mode));

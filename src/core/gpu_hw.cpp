@@ -121,6 +121,18 @@ ALWAYS_INLINE bool ShouldAllowSpriteMode(u8 resolution_scale, GPUTextureFilter t
           (resolution_scale > 1 && g_gpu_settings.gpu_force_round_texcoords));
 }
 
+ALWAYS_INLINE GPUTextureFilter GetVRAMWriteTextureFilter(u8 resolution_scale)
+{
+  // Filtering CPU->VRAM uploads (pre-rendered backgrounds/2D images) only makes sense when upscaling.
+  if (!g_gpu_settings.gpu_filter_vram_writes || resolution_scale <= 1)
+    return GPUTextureFilter::Nearest;
+
+  // Prefer the sprite filter (VRAM writes are 2D content), fall back to the main texture filter.
+  return (g_gpu_settings.gpu_sprite_texture_filter != GPUTextureFilter::Nearest) ?
+           g_gpu_settings.gpu_sprite_texture_filter :
+           g_gpu_settings.gpu_texture_filter;
+}
+
 ALWAYS_INLINE bool ShouldDisableColorPerspective()
 {
   return g_gpu_settings.gpu_pgxp_enable && g_gpu_settings.gpu_pgxp_texture_correction &&
@@ -299,6 +311,7 @@ bool GPU_HW::Initialize(bool upload_vram, Error* error)
   m_multisamples = Truncate8(std::min<u32>(g_gpu_settings.gpu_multisamples, g_gpu_device->GetMaxMultisamples()));
   m_texture_filtering = g_gpu_settings.gpu_texture_filter;
   m_sprite_texture_filtering = g_gpu_settings.gpu_sprite_texture_filter;
+  m_vram_write_texture_filtering = GetVRAMWriteTextureFilter(m_resolution_scale);
   m_line_detect_mode = (m_resolution_scale > 1) ? g_gpu_settings.gpu_line_detect_mode : GPULineDetectMode::Disabled;
   m_downsample_mode = GetDownsampleMode(m_resolution_scale);
   m_wireframe_mode = g_gpu_settings.gpu_wireframe_mode;
@@ -545,6 +558,7 @@ bool GPU_HW::UpdateSettings(const GPUSettings& old_settings, Error* error)
      g_gpu_settings.IsUsingShaderBlending() != old_settings.IsUsingShaderBlending() ||
      m_texture_filtering != g_gpu_settings.gpu_texture_filter ||
      m_sprite_texture_filtering != g_gpu_settings.gpu_sprite_texture_filter || m_clamp_uvs != clamp_uvs ||
+     m_vram_write_texture_filtering != GetVRAMWriteTextureFilter(resolution_scale) ||
      (features.geometry_shaders && g_gpu_settings.gpu_wireframe_mode != old_settings.gpu_wireframe_mode) ||
      m_pgxp_depth_buffer != g_gpu_settings.UsingPGXPDepthBuffer() ||
      (features.noperspective_interpolation && g_gpu_settings.gpu_pgxp_enable &&
@@ -610,6 +624,7 @@ bool GPU_HW::UpdateSettings(const GPUSettings& old_settings, Error* error)
   m_multisamples = multisamples;
   m_texture_filtering = g_gpu_settings.gpu_texture_filter;
   m_sprite_texture_filtering = g_gpu_settings.gpu_sprite_texture_filter;
+  m_vram_write_texture_filtering = GetVRAMWriteTextureFilter(resolution_scale);
   m_line_detect_mode = (m_resolution_scale > 1) ? g_gpu_settings.gpu_line_detect_mode : GPULineDetectMode::Disabled;
   m_downsample_mode = GetDownsampleMode(resolution_scale);
   m_wireframe_mode = g_gpu_settings.gpu_wireframe_mode;
@@ -1684,7 +1699,9 @@ bool GPU_HW::CompilePipelines(Error* error)
     const bool use_ssbo = features.texture_buffers_emulated_with_ssbo;
     std::unique_ptr<GPUShader> fs = g_gpu_device->CreateShader(
       GPUShaderStage::Fragment, shadergen.GetLanguage(),
-      shadergen.GenerateVRAMWriteFragmentShader(use_buffer, use_ssbo, m_write_mask_as_depth, needs_rov_depth), error);
+      shadergen.GenerateVRAMWriteFragmentShader(use_buffer, use_ssbo, m_write_mask_as_depth, needs_rov_depth,
+                                                m_vram_write_texture_filtering),
+      error);
     if (!fs)
       return false;
 
@@ -1836,7 +1853,10 @@ bool GPU_HW::CompileResolutionDependentPipelines(Error* error)
   {
     std::unique_ptr<GPUShader> fs =
       g_gpu_device->CreateShader(GPUShaderStage::Fragment, shadergen.GetLanguage(),
-                                 shadergen.GenerateVRAMReadFragmentShader(m_resolution_scale, m_multisamples), error);
+                                 shadergen.GenerateVRAMReadFragmentShader(
+                                   m_resolution_scale, m_multisamples,
+                                   m_vram_write_texture_filtering != GPUTextureFilter::Nearest),
+                                 error);
     if (!fs)
       return false;
 

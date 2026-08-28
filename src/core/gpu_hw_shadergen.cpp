@@ -2882,7 +2882,8 @@ std::string GPU_HW_ShaderGen::GenerateWireframeFragmentShader() const
   return std::move(ss).str();
 }
 
-std::string GPU_HW_ShaderGen::GenerateVRAMReadFragmentShader(u32 resolution_scale, u32 multisamples) const
+std::string GPU_HW_ShaderGen::GenerateVRAMReadFragmentShader(u32 resolution_scale, u32 multisamples,
+                                                             bool point_sample) const
 {
   const bool msaa = (multisamples > 1);
 
@@ -2891,6 +2892,7 @@ std::string GPU_HW_ShaderGen::GenerateVRAMReadFragmentShader(u32 resolution_scal
   WriteColorConversionFunctions(ss);
 
   DefineMacro(ss, "MULTISAMPLING", msaa);
+  DefineMacro(ss, "POINT_SAMPLE", point_sample);
   ss << "CONSTANT uint RESOLUTION_SCALE = " << resolution_scale << "u;\n";
   ss << "CONSTANT uint MULTISAMPLES = " << multisamples << "u;\n";
 
@@ -2915,6 +2917,11 @@ uint SampleVRAM(uint2 coords)
 {
   if (RESOLUTION_SCALE == 1u)
     return RGBA8ToRGBA5551(LoadVRAM(int2(coords)));
+
+#if POINT_SAMPLE
+  // Sample the block corner, which is kept bit-exact when VRAM write filtering is enabled.
+  return RGBA8ToRGBA5551(LoadVRAM(int2(coords * uint2(RESOLUTION_SCALE, RESOLUTION_SCALE))));
+#endif
 
   // Box filter for downsampling.
   float4 value = float4(0.0, 0.0, 0.0, 0.0);
@@ -2948,9 +2955,12 @@ uint SampleVRAM(uint2 coords)
 }
 
 std::string GPU_HW_ShaderGen::GenerateVRAMWriteFragmentShader(bool use_buffer, bool use_ssbo, bool write_mask_as_depth,
-                                                              bool write_depth_as_rt) const
+                                                              bool write_depth_as_rt,
+                                                              GPUTextureFilter texture_filter) const
 {
   Assert(!write_mask_as_depth || (write_mask_as_depth != write_depth_as_rt));
+
+  const bool filtered = (texture_filter != GPUTextureFilter::Nearest);
 
   std::stringstream ss;
   WriteHeader(ss);
@@ -2959,6 +2969,8 @@ std::string GPU_HW_ShaderGen::GenerateVRAMWriteFragmentShader(bool use_buffer, b
   DefineMacro(ss, "WRITE_MASK_AS_DEPTH", write_mask_as_depth);
   DefineMacro(ss, "WRITE_DEPTH_AS_RT", write_depth_as_rt);
   DefineMacro(ss, "USE_BUFFER", use_buffer);
+  DefineMacro(ss, "FILTERED", filtered);
+  DefineMacro(ss, "TEXTURE_ALPHA_BLENDING", false);
 
   ss << "CONSTANT float2 VRAM_SIZE = float2(" << VRAM_WIDTH << ".0, " << VRAM_HEIGHT << ".0);\n";
 
@@ -2993,10 +3005,35 @@ std::string GPU_HW_ShaderGen::GenerateVRAMWriteFragmentShader(bool use_buffer, b
     ss << "#define GET_VALUE(buffer_offset) (LOAD_TEXTURE_BUFFER(samp0, int(buffer_offset)).r)\n\n";
   }
 
+  if (filtered)
+  {
+    // Scaffolding for reusing the batch texture filters. The write rect acts as the "texture",
+    // texpage is unused, and uv_limits clamps sampling to the uploaded data.
+    ss << R"(
+#define TEXPAGE_VALUE uint2
+CONSTANT float4 TRANSPARENT_PIXEL_COLOR = float4(0.0, 0.0, 0.0, 0.0);
+
+float4 SampleFromVRAM(TEXPAGE_VALUE texpage, float2 coords, float4 uv_limits)
+{
+  float2 c = clamp(floor(coords), uv_limits.xy, uv_limits.zw);
+#if !USE_BUFFER
+  uint value = LOAD_TEXTURE(samp0, int2(c), 0).x;
+#else
+  uint buffer_offset = u_buffer_base_offset + uint((c.y * u_size.x) + c.x);
+  uint value = GET_VALUE(buffer_offset) | u_mask_or_bits;
+#endif
+  return RGBA5551ToRGBA8(value);
+}
+)";
+
+    WriteBatchTextureFilter(ss, texture_filter);
+  }
+
   DeclareFragmentEntryPoint(ss, 0, 1, {}, true, 1 + BoolToUInt32(write_depth_as_rt), false, write_mask_as_depth);
   ss << R"(
 {
-  float2 coords = floor(v_pos.xy / u_resolution_scale);
+  float2 fcoords = v_pos.xy / u_resolution_scale;
+  float2 coords = floor(fcoords);
 
   // make sure it's not oversized and out of range
   if ((coords.x < u_base_coords.x && coords.x >= u_end_coords.x) ||
@@ -3018,6 +3055,28 @@ std::string GPU_HW_ShaderGen::GenerateVRAMWriteFragmentShader(bool use_buffer, b
 #endif
 
   o_col0 = RGBA5551ToRGBA8(value);
+
+#if FILTERED
+  // Upscale-filter CPU->VRAM uploads (pre-rendered backgrounds, 2D images), like PeteOpenGL2Tweak's
+  // xBRZ texture scaler. The first subpixel of every source texel keeps its exact value so that any
+  // path that reinterprets raw 1x VRAM data (24-bit display decode, palette/CLUT fetches, which all
+  // sample block corners of the scaled texture) still sees bit-exact data. The mask bit (alpha) and
+  // depth are also always derived from the exact source value.
+  uint uscale = uint(u_resolution_scale);
+  uint2 subpixel = uint2(floor(v_pos.xy)) % uint2(uscale, uscale);
+  if (uscale > 1u && (subpixel.x != 0u || subpixel.y != 0u) && u_size.x >= 8.0 && u_size.y >= 8.0)
+  {
+    float2 local_coords = offset + frac(fcoords);
+    float4 uv_limits = float4(0.0, 0.0, u_size.x - 1.0, u_size.y - 1.0);
+    float4 texcol;
+    float ialpha;
+    FilteredSampleFromVRAM(uint2(0u, 0u), local_coords, uv_limits, texcol, ialpha);
+
+    // Undo the transparent-sample compensation; raw VRAM data blends towards black (color 0000h).
+    o_col0.rgb = texcol.rgb * ialpha;
+  }
+#endif
+
 #if WRITE_MASK_AS_DEPTH
   o_depth = (o_col0.a == 1.0) ? u_depth_value : 0.0;
 #elif WRITE_DEPTH_AS_RT

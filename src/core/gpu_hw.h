@@ -297,6 +297,7 @@ private:
 
   GPUTextureFilter m_texture_filtering = GPUTextureFilter::Nearest;
   GPUTextureFilter m_sprite_texture_filtering = GPUTextureFilter::Nearest;
+  GPUTextureFilter m_vram_write_texture_filtering = GPUTextureFilter::Nearest;
   GPULineDetectMode m_line_detect_mode = GPULineDetectMode::Disabled;
   GPUDownsampleMode m_downsample_mode = GPUDownsampleMode::Disabled;
   GPUWireframeMode m_wireframe_mode = GPUWireframeMode::Disabled;
