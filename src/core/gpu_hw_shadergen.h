@@ -39,6 +39,7 @@ public:
   std::string GenerateVRAMClearDepthFragmentShader(bool write_depth_as_rt) const;
   std::string GenerateVRAMExtractFragmentShader(u32 resolution_scale, u32 multisamples, bool color_24bit,
                                                 bool depth_buffer) const;
+  std::string GenerateDisplay24FilterFragmentShader(u32 resolution_scale, GPUTextureFilter texture_filter) const;
   std::string GenerateVRAMReplacementBlitFragmentShader() const;
 
   std::string GenerateAdaptiveDownsampleVertexShader() const;

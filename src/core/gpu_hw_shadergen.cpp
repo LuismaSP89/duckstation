@@ -2778,6 +2778,46 @@ float3 SampleVRAM24(uint2 icoords)
   return std::move(ss).str();
 }
 
+std::string GPU_HW_ShaderGen::GenerateDisplay24FilterFragmentShader(u32 resolution_scale,
+                                                                    GPUTextureFilter texture_filter) const
+{
+  std::stringstream ss;
+  WriteHeader(ss);
+
+  DefineMacro(ss, "TEXTURE_ALPHA_BLENDING", false);
+  ss << "CONSTANT float RESOLUTION_SCALE = " << resolution_scale << ".0;\n";
+
+  DeclareUniformBuffer(ss, {"float2 u_size"}, true);
+  DeclareTexture(ss, "samp0", 0, false);
+
+  // Scaffolding for reusing the batch texture filters on the extracted 24-bit display texture.
+  ss << R"(
+#define TEXPAGE_VALUE uint2
+CONSTANT float4 TRANSPARENT_PIXEL_COLOR = float4(0.0, 0.0, 0.0, 0.0);
+
+float4 SampleFromVRAM(TEXPAGE_VALUE texpage, float2 coords, float4 uv_limits)
+{
+  float2 c = clamp(floor(coords), uv_limits.xy, uv_limits.zw);
+  return float4(LOAD_TEXTURE(samp0, int2(c), 0).rgb, 1.0);
+}
+)";
+
+  WriteBatchTextureFilter(ss, texture_filter);
+
+  DeclareFragmentEntryPoint(ss, 0, 1, {}, true, 1);
+  ss << R"(
+{
+  float2 coords = v_pos.xy / RESOLUTION_SCALE;
+  float4 uv_limits = float4(0.0, 0.0, u_size.x - 1.0, u_size.y - 1.0);
+  float4 texcol;
+  float ialpha;
+  FilteredSampleFromVRAM(uint2(0u, 0u), coords, uv_limits, texcol, ialpha);
+  o_col0 = float4(texcol.rgb * ialpha, 1.0);
+})";
+
+  return std::move(ss).str();
+}
+
 std::string GPU_HW_ShaderGen::GenerateVRAMReplacementBlitFragmentShader() const
 {
   std::stringstream ss;

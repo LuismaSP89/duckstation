@@ -1106,6 +1106,7 @@ void GPU_HW::DestroyBuffers()
   g_gpu_device->RecycleTexture(std::move(m_downsample_texture));
   g_gpu_device->RecycleTexture(std::move(m_vram_extract_depth_texture));
   g_gpu_device->RecycleTexture(std::move(m_vram_extract_texture));
+  g_gpu_device->RecycleTexture(std::move(m_display_filter_texture));
   g_gpu_device->RecycleTexture(std::move(m_vram_read_texture));
   g_gpu_device->RecycleTexture(std::move(m_vram_depth_copy_texture));
   g_gpu_device->RecycleTexture(std::move(m_vram_depth_texture));
@@ -1830,6 +1831,7 @@ bool GPU_HW::CompileResolutionDependentPipelines(Error* error)
   Timer timer;
 
   m_vram_readback_pipeline.reset();
+  m_display_24bit_filter_pipeline.reset();
   for (std::unique_ptr<GPUPipeline>& p : m_vram_extract_pipeline)
     p.reset();
 
@@ -1897,6 +1899,25 @@ bool GPU_HW::CompileResolutionDependentPipelines(Error* error)
       GL_OBJECT_NAME_FMT(m_vram_readback_pipeline, "VRAM Extract Pipeline 24bit={} Depth={}", color_24bit,
                          depth_extract);
     }
+  }
+
+  // 24-bit display filtering (FMVs/static images), used when VRAM write filtering is enabled.
+  if (m_vram_write_texture_filtering != GPUTextureFilter::Nearest && m_resolution_scale > 1)
+  {
+    std::unique_ptr<GPUShader> fs = g_gpu_device->CreateShader(
+      GPUShaderStage::Fragment, shadergen.GetLanguage(),
+      shadergen.GenerateDisplay24FilterFragmentShader(m_resolution_scale, m_vram_write_texture_filtering), error);
+    if (!fs)
+      return false;
+
+    plconfig.fragment_shader = fs.get();
+    plconfig.layout = GPUPipeline::Layout::SingleTextureAndPushConstants;
+    plconfig.color_formats[1] = GPUTextureFormat::Unknown;
+
+    if (!(m_display_24bit_filter_pipeline = g_gpu_device->CreatePipeline(plconfig, error)))
+      return false;
+
+    GL_OBJECT_NAME(m_display_24bit_filter_pipeline, "24-bit Display Filter Pipeline");
   }
 
   INFO_LOG("Compiling resolution dependent pipelines took {:.2f} ms.", timer.GetTimeMilliseconds());
@@ -4202,21 +4223,46 @@ void GPU_HW::UpdateDisplay(const GPUBackendUpdateDisplayCommand* cmd)
 
     drew_anything = true;
 
-    VideoPresenter::SetDisplayTexture(m_vram_extract_texture.get(),
-                                      GSVector4i(0, 0, scaled_display_width, scaled_display_height));
+    GPUTexture* display_texture = m_vram_extract_texture.get();
+    u32 display_width = scaled_display_width;
+    u32 display_height = scaled_display_height;
+
+    // Upscale-filter 24-bit displays (FMVs/static images) when VRAM write filtering is enabled.
+    // 24-bit displays are always extracted at 1x, so this behaves like a plain image upscaler.
+    if (cmd->display_24bit && !interlaced && line_skip == 0 && m_display_24bit_filter_pipeline &&
+        g_gpu_device->ResizeTexture(&m_display_filter_texture, scaled_display_width * m_resolution_scale,
+                                    scaled_display_height * m_resolution_scale, GPUTexture::Type::RenderTarget,
+                                    GPUTextureFormat::RGBA8, GPUTexture::Flags::None))
+    {
+      GL_SCOPE("Filter 24-bit display");
+      display_width = scaled_display_width * m_resolution_scale;
+      display_height = scaled_display_height * m_resolution_scale;
+      g_gpu_device->InvalidateRenderTarget(m_display_filter_texture.get());
+      g_gpu_device->SetRenderTarget(m_display_filter_texture.get());
+      g_gpu_device->SetPipeline(m_display_24bit_filter_pipeline.get());
+      g_gpu_device->SetTextureSampler(0, m_vram_extract_texture.get(), g_gpu_device->GetNearestSampler());
+      g_gpu_device->SetViewportAndScissor(0, 0, display_width, display_height);
+
+      const float filter_uniforms[2] = {static_cast<float>(scaled_display_width),
+                                        static_cast<float>(scaled_display_height)};
+      g_gpu_device->DrawWithPushConstants(3, 0, filter_uniforms, sizeof(filter_uniforms));
+
+      m_display_filter_texture->MakeReadyForSampling();
+      display_texture = m_display_filter_texture.get();
+    }
+
+    VideoPresenter::SetDisplayTexture(display_texture, GSVector4i(0, 0, display_width, display_height));
 
     // Apply internal postfx if enabled.
     if (m_internal_postfx && m_internal_postfx->IsActive() &&
-        m_internal_postfx->CheckTargets(scaled_display_width, scaled_display_height, m_vram_texture->GetFormat(),
-                                        scaled_display_width, scaled_display_height, scaled_display_width,
-                                        scaled_display_height))
+        m_internal_postfx->CheckTargets(display_width, display_height, m_vram_texture->GetFormat(), display_width,
+                                        display_height, display_width, display_height))
     {
       const GSVector2i& video_size = VideoPresenter::GetVideoSize();
       GPUTexture* const postfx_output = m_internal_postfx->GetOutputTexture();
-      m_internal_postfx->Apply(
-        m_vram_extract_texture.get(), depth_source ? m_vram_extract_depth_texture.get() : nullptr,
-        m_internal_postfx->GetOutputTexture(), GSVector4i(0, 0, scaled_display_width, scaled_display_height),
-        video_size.x, video_size.y, cmd->display_vram_width, cmd->display_vram_height);
+      m_internal_postfx->Apply(display_texture, depth_source ? m_vram_extract_depth_texture.get() : nullptr,
+                               m_internal_postfx->GetOutputTexture(), GSVector4i(0, 0, display_width, display_height),
+                               video_size.x, video_size.y, cmd->display_vram_width, cmd->display_vram_height);
       VideoPresenter::SetDisplayTexture(postfx_output, postfx_output->GetRect());
     }
 
