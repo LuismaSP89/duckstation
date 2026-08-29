@@ -2527,17 +2527,19 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
         {
           // Outward-only silhouette smoothing: grow the cut-out edge when the filter has solid,
-          // non-dark support. Dark growth is suppressed because it is what plants matte/outline
-          // dots onto the layers behind; erosion is never allowed (it reveals occluded matte).
-          if (ialpha < 0.5 || (texcol.r + texcol.g + texcol.b) < 0.45)
+          // non-near-black support. Near-black growth is suppressed because it is what plants
+          // matte/outline dots onto the layers behind; erosion is never allowed (it reveals
+          // occluded matte).
+          if (ialpha < 0.45 || (texcol.r + texcol.g + texcol.b) < 0.3)
             discard;
         }
         else
         {
           // Luminance floor: matte tap replacements and failed transparency compensation pollute
-          // edges by darkening them heavily, which legitimate smoothing never does. Snap those
-          // pixels back to the exact color; blends, tints and brightenings keep full filtering.
-          if ((texcol.r + texcol.g + texcol.b) < (0.3 * (ncol.r + ncol.g + ncol.b)))
+          // edges towards near-pure black, which legitimate smoothing (even against dark art
+          // outlines) practically never reaches. Snap only those pixels back to the exact color.
+          float tsum = texcol.r + texcol.g + texcol.b;
+          if (tsum < 0.15 && tsum < (0.5 * (ncol.r + ncol.g + ncol.b)))
             texcol.rgb = ncol.rgb;
           texcol.a = ncol.a;
         }
