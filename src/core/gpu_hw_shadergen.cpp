@@ -2385,13 +2385,13 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
 {
   float4 color = SampleFromVRAMRaw(texpage, DECLARE_UV_LIMITS(coords, uv_limits));
 #if FILTER_CHROMA_KEY
-  // Some games (e.g. FF7) leave green-screen matte garbage next to real content in their
-  // layered background tiles. It is never visible with nearest sampling, but texture
-  // filtering blends it into content edges. Treat saturated greens as transparent while
-  // filtering; the exact-texel coverage path still uses the raw values.
-  color = (color.g >= 0.55 && color.r <= 0.28 && color.b <= 0.28 && color.g >= (2.0 * max(color.r, color.b))) ?
-            float4(0.0, 0.0, 0.0, 0.0) :
-            color;
+  // Some games (e.g. FF7) leave chroma matte garbage (green or blue screen) next to real
+  // content in their layered background tiles. It is never visible with nearest sampling,
+  // but texture filtering blends it into content edges. Treat saturated greens/blues as
+  // transparent while filtering; the exact-texel coverage path still uses the raw values.
+  bool matte = (color.g >= 0.55 && color.r <= 0.28 && color.b <= 0.28 && color.g >= (2.0 * max(color.r, color.b))) ||
+               (color.b >= 0.55 && color.r <= 0.28 && color.g <= 0.28 && color.b >= (2.0 * max(color.r, color.g)));
+  color = matte ? float4(0.0, 0.0, 0.0, 0.0) : color;
 #endif
   return color;
 }
