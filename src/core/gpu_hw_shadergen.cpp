@@ -2384,10 +2384,13 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
 {
   float4 color = SampleFromVRAMRaw(texpage, DECLARE_UV_LIMITS(coords, uv_limits));
 #if FILTER_CHROMA_KEY
-  // Some games (e.g. FF7) leave pure-green matte garbage next to real content in their
+  // Some games (e.g. FF7) leave green-screen matte garbage next to real content in their
   // layered background tiles. It is never visible with nearest sampling, but texture
-  // filtering blends it into content edges. Treat it as transparent while filtering.
-  color = (color.g >= 0.97 && color.r <= 0.04 && color.b <= 0.04) ? float4(0.0, 0.0, 0.0, 0.0) : color;
+  // filtering blends it into content edges. Treat saturated greens as transparent while
+  // filtering; the exact-texel coverage path still uses the raw values.
+  color = (color.g >= 0.55 && color.r <= 0.28 && color.b <= 0.28 && color.g >= (2.0 * max(color.r, color.b))) ?
+            float4(0.0, 0.0, 0.0, 0.0) :
+            color;
 #endif
   return color;
 }
@@ -2483,9 +2486,9 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         // erodes sprite silhouettes and reveals occluded texels behind layered 2D backgrounds
         // (e.g. matte garbage around FF7 field layers). Only the color is filtered.
         #if PAGE_TEXTURE
-          float4 ncol = SampleFromVRAM(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
+          float4 ncol = SampleFromVRAMRaw(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #else
-          float4 ncol = SampleFromVRAM(v_texpage, DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
+          float4 ncol = SampleFromVRAMRaw(v_texpage, DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #endif
         if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
           discard;
