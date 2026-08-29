@@ -2525,15 +2525,23 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         // exact per-tap alpha compensation), and pixels are written opaque so edges never
         // alpha-blend over the occluded matte either.
         if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
-          discard;
-        // Luminance floor: matte taps and transparency compensation can only pollute edges by
-        // darkening them (matte replacements resolve towards dark); heavy darkening relative to
-        // the exact texel is never a legitimate smoothing result, so snap those pixels back to
-        // the exact color. Legitimate blends, tints and brightenings are untouched.
-        if ((texcol.r + texcol.g + texcol.b) < (0.5 * (ncol.r + ncol.g + ncol.b)))
-          texcol.rgb = ncol.rgb;
+        {
+          // Outward-only silhouette smoothing: grow the cut-out edge when the filter has solid,
+          // non-dark support. Dark growth is suppressed because it is what plants matte/outline
+          // dots onto the layers behind; erosion is never allowed (it reveals occluded matte).
+          if (ialpha < 0.5 || (texcol.r + texcol.g + texcol.b) < 0.45)
+            discard;
+        }
+        else
+        {
+          // Luminance floor: matte tap replacements and failed transparency compensation pollute
+          // edges by darkening them heavily, which legitimate smoothing never does. Snap those
+          // pixels back to the exact color; blends, tints and brightenings keep full filtering.
+          if ((texcol.r + texcol.g + texcol.b) < (0.3 * (ncol.r + ncol.g + ncol.b)))
+            texcol.rgb = ncol.rgb;
+          texcol.a = ncol.a;
+        }
         ialpha = 1.0;
-        texcol.a = ncol.a;
       #else
         if (ialpha < 0.5)
           discard;
