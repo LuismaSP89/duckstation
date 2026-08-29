@@ -2201,6 +2201,7 @@ std::string GPU_HW_ShaderGen::GenerateBatchFragmentShader(
   DefineMacro(ss, "TEXTURE_ALPHA_BLENDING", is_blended_texture_filtering);
   DefineMacro(ss, "FILTER_NEAREST_COVERAGE",
               filter_nearest_coverage && texture_filtering != GPUTextureFilter::Nearest);
+  DefineMacro(ss, "FILTER_CHROMA_KEY", filter_nearest_coverage && texture_filtering != GPUTextureFilter::Nearest);
   DefineMacro(ss, "UV_LIMITS", uv_limits);
   DefineMacro(ss, "USE_ROV", use_rov);
   DefineMacro(ss, "USE_ROV_DEPTH", use_rov_depth);
@@ -2316,7 +2317,7 @@ float4 SampleFromPageTexture(DECLARE_UV_LIMITS(float2 coords, float4 uv_limits))
 
 #if !PAGE_TEXTURE || TEXTURE_FILTERING
 
-float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, float4 uv_limits))
+float4 SampleFromVRAMRaw(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, float4 uv_limits))
 {
   #if PAGE_TEXTURE
     return SampleFromPageTexture(DECLARE_UV_LIMITS(coords, uv_limits));
@@ -2377,6 +2378,18 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
       return SAMPLE_TEXTURE_LEVEL(samp0, ncoords * RCP_VRAM_SIZE, 0.0);
     #endif
   #endif
+}
+
+float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, float4 uv_limits))
+{
+  float4 color = SampleFromVRAMRaw(texpage, DECLARE_UV_LIMITS(coords, uv_limits));
+#if FILTER_CHROMA_KEY
+  // Some games (e.g. FF7) leave pure-green matte garbage next to real content in their
+  // layered background tiles. It is never visible with nearest sampling, but texture
+  // filtering blends it into content edges. Treat it as transparent while filtering.
+  color = (color.g >= 0.97 && color.r <= 0.04 && color.b <= 0.04) ? float4(0.0, 0.0, 0.0, 0.0) : color;
+#endif
+  return color;
 }
 
 #endif // !PAGE_TEXTURE || TEXTURE_FILTERING
@@ -2470,7 +2483,7 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         // erodes sprite silhouettes and reveals occluded texels behind layered 2D backgrounds
         // (e.g. matte garbage around FF7 field layers). Only the color is filtered.
         #if PAGE_TEXTURE
-          float4 ncol = SampleFromPageTexture(DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
+          float4 ncol = SampleFromVRAM(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #else
           float4 ncol = SampleFromVRAM(v_texpage, DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #endif
