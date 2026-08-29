@@ -20,8 +20,8 @@ public:
                                         bool disable_color_perspective) const;
   std::string GenerateBatchFragmentShader(GPU_HW::BatchRenderMode render_mode, GPUTransparencyMode transparency,
                                           GPU_HW::BatchTextureMode texture_mode, GPUTextureFilter texture_filtering,
-                                          bool is_blended_texture_filtering, bool filter_nearest_coverage, bool upscaled,
-                                          bool msaa,
+                                          bool is_blended_texture_filtering, bool filter_nearest_coverage,
+                                          bool filter_chroma_key, bool upscaled, bool msaa,
                                           bool per_sample_shading, bool uv_limits, bool force_round_texcoords,
                                           bool modulation_crop, bool true_color, bool dithering, bool scaled_dithering,
                                           bool disable_color_perspective, bool interlacing, bool scaled_interlacing,

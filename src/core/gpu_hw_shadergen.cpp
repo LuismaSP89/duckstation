@@ -2157,8 +2157,9 @@ void FilteredSampleFromVRAM(TEXPAGE_VALUE texpage, float2 coords, float4 uv_limi
 
 std::string GPU_HW_ShaderGen::GenerateBatchFragmentShader(
   GPU_HW::BatchRenderMode render_mode, GPUTransparencyMode transparency, GPU_HW::BatchTextureMode texture_mode,
-  GPUTextureFilter texture_filtering, bool is_blended_texture_filtering, bool filter_nearest_coverage, bool upscaled,
-  bool msaa, bool per_sample_shading, bool uv_limits, bool force_round_texcoords, bool modulation_crop, bool true_color,
+  GPUTextureFilter texture_filtering, bool is_blended_texture_filtering, bool filter_nearest_coverage,
+  bool filter_chroma_key, bool upscaled, bool msaa, bool per_sample_shading, bool uv_limits,
+  bool force_round_texcoords, bool modulation_crop, bool true_color,
   bool dithering, bool scaled_dithering, bool disable_color_perspective, bool interlacing, bool scaled_interlacing,
   bool check_mask, bool write_mask_as_depth, bool use_rov, bool use_rov_depth, bool rov_depth_test,
   bool rov_depth_write) const
@@ -2201,7 +2202,7 @@ std::string GPU_HW_ShaderGen::GenerateBatchFragmentShader(
   DefineMacro(ss, "TEXTURE_ALPHA_BLENDING", is_blended_texture_filtering);
   DefineMacro(ss, "FILTER_NEAREST_COVERAGE",
               filter_nearest_coverage && texture_filtering != GPUTextureFilter::Nearest);
-  DefineMacro(ss, "FILTER_CHROMA_KEY", filter_nearest_coverage && texture_filtering != GPUTextureFilter::Nearest);
+  DefineMacro(ss, "FILTER_CHROMA_KEY", filter_chroma_key && texture_filtering != GPUTextureFilter::Nearest);
   DefineMacro(ss, "UV_LIMITS", uv_limits);
   DefineMacro(ss, "USE_ROV", use_rov);
   DefineMacro(ss, "USE_ROV_DEPTH", use_rov_depth);
