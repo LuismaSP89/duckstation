@@ -2401,7 +2401,10 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
                (color.r >= 0.55 && color.g <= 0.28 && color.b <= 0.28 && color.r >= (2.0 * max(color.g, color.b))) ||
                (color.g >= 0.55 && color.b >= 0.55 && color.r <= 0.28 && min(color.g, color.b) >= (2.0 * color.r)) ||
                (color.r >= 0.55 && color.b >= 0.55 && color.g <= 0.28 && min(color.r, color.b) >= (2.0 * color.g));
-  color = (matte && VECTOR_NEQ(color, TRANSPARENT_PIXEL_COLOR)) ? g_compat_center : color;
+  // Near-black fringe baked next to layer cuts bleeds as dark hairlines onto bright surfaces.
+  bool darkfringe = (max(color.r, max(color.g, color.b)) <= 0.13) &&
+                    ((g_compat_center.r + g_compat_center.g + g_compat_center.b) >= 1.65);
+  color = ((matte || darkfringe) && VECTOR_NEQ(color, TRANSPARENT_PIXEL_COLOR)) ? g_compat_center : color;
 #endif
   return color;
 }
@@ -2488,16 +2491,11 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
       ialpha = 1.0;
     #elif TEXTURE_FILTERING
       #if FILTER_NEAREST_COVERAGE
-        // Decide coverage and semitransparency from the exact center texel, so that filtering never
-        // erodes sprite silhouettes and reveals occluded texels behind layered 2D backgrounds
-        // (e.g. matte garbage around FF7 field layers). Only the color is filtered.
         #if PAGE_TEXTURE
           float4 ncol = SampleFromVRAMRaw(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #else
           float4 ncol = SampleFromVRAMRaw(v_texpage, DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #endif
-        if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
-          discard;
         #if FILTER_CHROMA_KEY
           g_compat_center = ncol;
         #endif
@@ -2508,8 +2506,14 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         FilteredSampleFromVRAM(v_texpage, v_tex0, v_uv_limits, texcol, ialpha);
       #endif
       #if FILTER_NEAREST_COVERAGE
+        // Filter-shaped binary coverage: the silhouette follows the filter (smooth cut-out edges on
+        // foliage/cursors), but pixels are always written opaque so edges never alpha-blend over
+        // occluded matte garbage behind layered backgrounds (e.g. FF7 fields).
+        if (ialpha < 0.5)
+          discard;
         ialpha = 1.0;
-        texcol.a = ncol.a;
+        if (VECTOR_NEQ(ncol, TRANSPARENT_PIXEL_COLOR))
+          texcol.a = ncol.a;
       #else
         if (ialpha < 0.5)
           discard;
