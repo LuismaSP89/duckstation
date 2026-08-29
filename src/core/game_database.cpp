@@ -779,7 +779,9 @@ void GameDatabase::Entry::ApplySettings(Settings& settings, bool display_osd_mes
   {
     // Enabling VRAM write filtering is an explicit opt-in to filtering 2D content, so keep the
     // sprite filter active despite the compatibility trait (the user prefers filtering artifacts
-    // over pixelation, like the old PeteOpenGL2Tweak behaviour).
+    // over pixelation, like the old PeteOpenGL2Tweak behaviour). Use nearest coverage so that
+    // filtering cannot erode sprite silhouettes and reveal the occluded matte garbage that this
+    // trait protects against (e.g. FF7 layered field backgrounds).
     if (!settings.gpu_filter_vram_writes)
     {
       if (display_osd_messages && g_settings.gpu_sprite_texture_filter != GPUTextureFilter::Nearest)
@@ -788,6 +790,10 @@ void GameDatabase::Entry::ApplySettings(Settings& settings, bool display_osd_mes
       }
 
       settings.gpu_sprite_texture_filter = GPUTextureFilter::Nearest;
+    }
+    else
+    {
+      settings.gpu_sprite_nearest_coverage = true;
     }
   }
 

@@ -79,6 +79,10 @@ struct GPUSettings
   bool gpu_scaled_interlacing : 1 = true;
   bool gpu_force_round_texcoords : 1 = false;
   bool gpu_filter_vram_writes : 1 = false;
+
+  // Not persisted, set by the game database for games with DisableSpriteTextureFiltering when
+  // gpu_filter_vram_writes keeps the sprite filter active despite the trait.
+  bool gpu_sprite_nearest_coverage : 1 = false;
   bool gpu_widescreen_rendering : 1 = false;
   bool gpu_widescreen_hack : 1 = false;
   bool gpu_modulation_crop : 1 = false;

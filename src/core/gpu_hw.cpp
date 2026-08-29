@@ -559,6 +559,7 @@ bool GPU_HW::UpdateSettings(const GPUSettings& old_settings, Error* error)
      m_texture_filtering != g_gpu_settings.gpu_texture_filter ||
      m_sprite_texture_filtering != g_gpu_settings.gpu_sprite_texture_filter || m_clamp_uvs != clamp_uvs ||
      m_vram_write_texture_filtering != GetVRAMWriteTextureFilter(resolution_scale) ||
+     g_gpu_settings.gpu_sprite_nearest_coverage != old_settings.gpu_sprite_nearest_coverage ||
      (features.geometry_shaders && g_gpu_settings.gpu_wireframe_mode != old_settings.gpu_wireframe_mode) ||
      m_pgxp_depth_buffer != g_gpu_settings.UsingPGXPDepthBuffer() ||
      (features.noperspective_interpolation && g_gpu_settings.gpu_pgxp_enable &&
@@ -1355,7 +1356,7 @@ bool GPU_HW::CompilePipelines(Error* error)
                 const std::string fs = shadergen.GenerateBatchFragmentShader(
                   static_cast<BatchRenderMode>(render_mode), static_cast<GPUTransparencyMode>(transparency_mode),
                   shader_texmode, texture_filter, texture_filter_is_blended,
-                  sprite && (m_vram_write_texture_filtering != GPUTextureFilter::Nearest), upscaled, msaa,
+                  sprite && g_gpu_settings.gpu_sprite_nearest_coverage, upscaled, msaa,
                   per_sample_shading, uv_limits, !sprite && force_round_texcoords, modulation_crop, true_color,
                   ConvertToBoolUnchecked(dithering), scaled_dithering, disable_color_perspective,
                   ConvertToBoolUnchecked(interlacing), scaled_interlacing, ConvertToBoolUnchecked(check_mask),
