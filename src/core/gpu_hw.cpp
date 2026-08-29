@@ -1353,10 +1353,15 @@ bool GPU_HW::CompilePipelines(Error* error)
                 const bool rov_depth_test = (use_rov && depth_test != 0);
                 const bool rov_depth_write = (rov_depth_test && static_cast<GPUTransparencyMode>(transparency_mode) ==
                                                                   GPUTransparencyMode::Disabled);
+                // Compat filtering only applies to opaque passes; semitransparent passes (dithered
+                // shadow/glow layers) keep the stock filter behavior, which renders them softly.
+                const bool compat_filter =
+                  g_gpu_settings.gpu_sprite_nearest_coverage &&
+                  (static_cast<BatchRenderMode>(render_mode) == BatchRenderMode::TransparencyDisabled ||
+                   static_cast<BatchRenderMode>(render_mode) == BatchRenderMode::OnlyOpaque);
                 const std::string fs = shadergen.GenerateBatchFragmentShader(
                   static_cast<BatchRenderMode>(render_mode), static_cast<GPUTransparencyMode>(transparency_mode),
-                  shader_texmode, texture_filter, texture_filter_is_blended,
-                  g_gpu_settings.gpu_sprite_nearest_coverage, g_gpu_settings.gpu_sprite_nearest_coverage, upscaled,
+                  shader_texmode, texture_filter, texture_filter_is_blended, compat_filter, compat_filter, upscaled,
                   msaa, per_sample_shading, uv_limits, !sprite && force_round_texcoords, modulation_crop, true_color,
                   ConvertToBoolUnchecked(dithering), scaled_dithering, disable_color_perspective,
                   ConvertToBoolUnchecked(interlacing), scaled_interlacing, ConvertToBoolUnchecked(check_mask),
