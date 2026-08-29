@@ -777,12 +777,18 @@ void GameDatabase::Entry::ApplySettings(Settings& settings, bool display_osd_mes
 
   if (HasTrait(Trait::DisableSpriteTextureFiltering))
   {
-    if (display_osd_messages && g_settings.gpu_sprite_texture_filter != GPUTextureFilter::Nearest)
+    // Enabling VRAM write filtering is an explicit opt-in to filtering 2D content, so keep the
+    // sprite filter active despite the compatibility trait (the user prefers filtering artifacts
+    // over pixelation, like the old PeteOpenGL2Tweak behaviour).
+    if (!settings.gpu_filter_vram_writes)
     {
-      append_message(TRANSLATE_SV("GameDatabase", "Sprite texture filtering disabled."));
-    }
+      if (display_osd_messages && g_settings.gpu_sprite_texture_filter != GPUTextureFilter::Nearest)
+      {
+        append_message(TRANSLATE_SV("GameDatabase", "Sprite texture filtering disabled."));
+      }
 
-    settings.gpu_sprite_texture_filter = GPUTextureFilter::Nearest;
+      settings.gpu_sprite_texture_filter = GPUTextureFilter::Nearest;
+    }
   }
 
   if (HasTrait(Trait::DisableScaledInterlacing))
