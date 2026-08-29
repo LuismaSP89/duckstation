@@ -2381,17 +2381,26 @@ float4 SampleFromVRAMRaw(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords,
   #endif
 }
 
+#if FILTER_CHROMA_KEY
+GLOBAL float4 g_compat_center;
+#endif
+
 float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, float4 uv_limits))
 {
   float4 color = SampleFromVRAMRaw(texpage, DECLARE_UV_LIMITS(coords, uv_limits));
 #if FILTER_CHROMA_KEY
-  // Some games (e.g. FF7) leave chroma matte garbage (green or blue screen) next to real
-  // content in their layered background tiles. It is never visible with nearest sampling,
-  // but texture filtering blends it into content edges. Treat saturated greens/blues as
-  // transparent while filtering; the exact-texel coverage path still uses the raw values.
-  bool matte = (color.g >= 0.55 && color.r <= 0.28 && color.b <= 0.28 && color.g >= (2.0 * max(color.r, color.b))) ||
-               (color.b >= 0.55 && color.r <= 0.28 && color.g <= 0.28 && color.b >= (2.0 * max(color.r, color.g)));
-  color = matte ? float4(0.0, 0.0, 0.0, 0.0) : color;
+  // Some games (e.g. FF7) leave chroma matte garbage (green/blue/cyan/magenta screens) next
+  // to real content in their layered background tiles. It is never visible with nearest
+  // sampling, but texture filtering blends it into content edges (tinted dashes), and
+  // transparent cut texels blend towards black (dark seams). Replace both with the exact
+  // center texel color, which makes such taps blend-neutral: filtering can neither tint nor
+  // darken content edges, and fully-matte regions render exactly as nearest.
+  bool matte = VECTOR_EQ(color, TRANSPARENT_PIXEL_COLOR) ||
+               (color.g >= 0.55 && color.r <= 0.28 && color.b <= 0.28 && color.g >= (2.0 * max(color.r, color.b))) ||
+               (color.b >= 0.55 && color.r <= 0.28 && color.g <= 0.28 && color.b >= (2.0 * max(color.r, color.g))) ||
+               (color.g >= 0.55 && color.b >= 0.55 && color.r <= 0.28 && min(color.g, color.b) >= (2.0 * color.r)) ||
+               (color.r >= 0.55 && color.b >= 0.55 && color.g <= 0.28 && min(color.r, color.b) >= (2.0 * color.g));
+  color = matte ? g_compat_center : color;
 #endif
   return color;
 }
@@ -2477,18 +2486,10 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
 
       ialpha = 1.0;
     #elif TEXTURE_FILTERING
-      #if PAGE_TEXTURE
-        FilteredSampleFromVRAM(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), v_tex0, v_uv_limits, texcol, ialpha);
-      #else
-        FilteredSampleFromVRAM(v_texpage, v_tex0, v_uv_limits, texcol, ialpha);
-      #endif
       #if FILTER_NEAREST_COVERAGE
         // Decide coverage and semitransparency from the exact center texel, so that filtering never
         // erodes sprite silhouettes and reveals occluded texels behind layered 2D backgrounds
-        // (e.g. matte garbage around FF7 field layers). Only the color is filtered, and only where
-        // the filter neighborhood is fully opaque; at silhouettes the filtered color is polluted by
-        // transparent/matte taps (imperfect compensation shows up as dark seam lines along layer
-        // edges), so fall back to the exact texel color there.
+        // (e.g. matte garbage around FF7 field layers). Only the color is filtered.
         #if PAGE_TEXTURE
           float4 ncol = SampleFromVRAMRaw(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #else
@@ -2496,15 +2497,16 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         #endif
         if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
           discard;
-        if (ialpha < 0.95)
-        {
-          // Only reject the filtered color when it deviates strongly from the real texel -
-          // that's when matte pollution or failed transparency compensation shows up as
-          // tinted dashes or dark seam lines. Reasonable blends keep the smoothing.
-          float3 cdiff = abs(texcol.rgb - ncol.rgb);
-          if (max(cdiff.r, max(cdiff.g, cdiff.b)) > 0.15)
-            texcol.rgb = ncol.rgb;
-        }
+        #if FILTER_CHROMA_KEY
+          g_compat_center = ncol;
+        #endif
+      #endif
+      #if PAGE_TEXTURE
+        FilteredSampleFromVRAM(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), v_tex0, v_uv_limits, texcol, ialpha);
+      #else
+        FilteredSampleFromVRAM(v_texpage, v_tex0, v_uv_limits, texcol, ialpha);
+      #endif
+      #if FILTER_NEAREST_COVERAGE
         ialpha = 1.0;
         texcol.a = ncol.a;
       #else
