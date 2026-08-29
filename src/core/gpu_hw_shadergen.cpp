@@ -2383,6 +2383,7 @@ float4 SampleFromVRAMRaw(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords,
 
 #if FILTER_CHROMA_KEY
 GLOBAL float4 g_compat_center;
+GLOBAL bool g_compat_near_cut;
 #endif
 
 float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, float4 uv_limits))
@@ -2401,9 +2402,11 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
                (color.r >= 0.55 && color.g <= 0.28 && color.b <= 0.28 && color.r >= (2.0 * max(color.g, color.b))) ||
                (color.g >= 0.55 && color.b >= 0.55 && color.r <= 0.28 && min(color.g, color.b) >= (2.0 * color.r)) ||
                (color.r >= 0.55 && color.b >= 0.55 && color.g <= 0.28 && min(color.r, color.b) >= (2.0 * color.g));
-  // Near-black fringe baked next to layer cuts bleeds as dark hairlines onto bright surfaces.
-  bool darkfringe = (max(color.r, max(color.g, color.b)) <= 0.13) &&
-                    ((g_compat_center.r + g_compat_center.g + g_compat_center.b) >= 1.65);
+  // Near-black fringe baked next to layer cuts bleeds as dark hairlines onto brighter surfaces.
+  // Only applies to pixels adjacent to a transparency cut, so dark detail inside contiguous art
+  // (brick mortar, outlines) keeps full filtering.
+  bool darkfringe = g_compat_near_cut && (max(color.r, max(color.g, color.b)) <= 0.18) &&
+                    ((g_compat_center.r + g_compat_center.g + g_compat_center.b) >= 1.2);
   color = ((matte || darkfringe) && VECTOR_NEQ(color, TRANSPARENT_PIXEL_COLOR)) ? g_compat_center : color;
 #endif
   return color;
@@ -2492,13 +2495,22 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
     #elif TEXTURE_FILTERING
       #if FILTER_NEAREST_COVERAGE
         #if PAGE_TEXTURE
-          float4 ncol = SampleFromVRAMRaw(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
+          #define COMPAT_SAMPLE(xoff, yoff)                                                                            \
+            SampleFromVRAMRaw(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u),                                                     \
+                              DECLARE_UV_LIMITS(v_tex0 + float2(xoff, yoff), v_uv_limits))
         #else
-          float4 ncol = SampleFromVRAMRaw(v_texpage, DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
+          #define COMPAT_SAMPLE(xoff, yoff)                                                                            \
+            SampleFromVRAMRaw(v_texpage, DECLARE_UV_LIMITS(v_tex0 + float2(xoff, yoff), v_uv_limits))
         #endif
+        float4 ncol = COMPAT_SAMPLE(0.0, 0.0);
         #if FILTER_CHROMA_KEY
           g_compat_center = ncol;
+          g_compat_near_cut = VECTOR_EQ(COMPAT_SAMPLE(1.0, 0.0), TRANSPARENT_PIXEL_COLOR) ||
+                              VECTOR_EQ(COMPAT_SAMPLE(-1.0, 0.0), TRANSPARENT_PIXEL_COLOR) ||
+                              VECTOR_EQ(COMPAT_SAMPLE(0.0, 1.0), TRANSPARENT_PIXEL_COLOR) ||
+                              VECTOR_EQ(COMPAT_SAMPLE(0.0, -1.0), TRANSPARENT_PIXEL_COLOR);
         #endif
+        #undef COMPAT_SAMPLE
       #endif
       #if PAGE_TEXTURE
         FilteredSampleFromVRAM(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), v_tex0, v_uv_limits, texcol, ialpha);
@@ -2506,16 +2518,16 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         FilteredSampleFromVRAM(v_texpage, v_tex0, v_uv_limits, texcol, ialpha);
       #endif
       #if FILTER_NEAREST_COVERAGE
-        // Grow-only filter-shaped coverage: every texel that nearest sampling would draw stays
-        // drawn (eroding the silhouette would reveal occluded matte garbage behind layered
-        // backgrounds as colored dots), and the filter may additionally grow smooth cut-out
-        // edges outwards (foliage/cursors). Pixels are always written opaque so edges never
+        // Exact coverage: draw precisely the texels nearest sampling would draw. Eroding the
+        // silhouette reveals occluded matte behind layered backgrounds as colored dots, and
+        // growing it extends baked dark outlines onto the layers behind as black dots; both
+        // are avoided by matching nearest coverage exactly. Colors keep full filtering (with
+        // exact per-tap alpha compensation), and pixels are written opaque so edges never
         // alpha-blend over the occluded matte either.
-        if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR) && ialpha < 0.5)
+        if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
           discard;
         ialpha = 1.0;
-        if (VECTOR_NEQ(ncol, TRANSPARENT_PIXEL_COLOR))
-          texcol.a = ncol.a;
+        texcol.a = ncol.a;
       #else
         if (ialpha < 0.5)
           discard;
