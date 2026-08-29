@@ -1354,8 +1354,9 @@ bool GPU_HW::CompilePipelines(Error* error)
                                                                   GPUTransparencyMode::Disabled);
                 const std::string fs = shadergen.GenerateBatchFragmentShader(
                   static_cast<BatchRenderMode>(render_mode), static_cast<GPUTransparencyMode>(transparency_mode),
-                  shader_texmode, texture_filter, texture_filter_is_blended, upscaled, msaa, per_sample_shading,
-                  uv_limits, !sprite && force_round_texcoords, modulation_crop, true_color,
+                  shader_texmode, texture_filter, texture_filter_is_blended,
+                  sprite && (m_vram_write_texture_filtering != GPUTextureFilter::Nearest), upscaled, msaa,
+                  per_sample_shading, uv_limits, !sprite && force_round_texcoords, modulation_crop, true_color,
                   ConvertToBoolUnchecked(dithering), scaled_dithering, disable_color_perspective,
                   ConvertToBoolUnchecked(interlacing), scaled_interlacing, ConvertToBoolUnchecked(check_mask),
                   m_write_mask_as_depth, use_rov, needs_rov_depth, rov_depth_test, rov_depth_write);

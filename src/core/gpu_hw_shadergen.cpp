@@ -2157,8 +2157,8 @@ void FilteredSampleFromVRAM(TEXPAGE_VALUE texpage, float2 coords, float4 uv_limi
 
 std::string GPU_HW_ShaderGen::GenerateBatchFragmentShader(
   GPU_HW::BatchRenderMode render_mode, GPUTransparencyMode transparency, GPU_HW::BatchTextureMode texture_mode,
-  GPUTextureFilter texture_filtering, bool is_blended_texture_filtering, bool upscaled, bool msaa,
-  bool per_sample_shading, bool uv_limits, bool force_round_texcoords, bool modulation_crop, bool true_color,
+  GPUTextureFilter texture_filtering, bool is_blended_texture_filtering, bool filter_nearest_coverage, bool upscaled,
+  bool msaa, bool per_sample_shading, bool uv_limits, bool force_round_texcoords, bool modulation_crop, bool true_color,
   bool dithering, bool scaled_dithering, bool disable_color_perspective, bool interlacing, bool scaled_interlacing,
   bool check_mask, bool write_mask_as_depth, bool use_rov, bool use_rov_depth, bool rov_depth_test,
   bool rov_depth_write) const
@@ -2199,6 +2199,8 @@ std::string GPU_HW_ShaderGen::GenerateBatchFragmentShader(
   DefineMacro(ss, "TRUE_COLOR", true_color);
   DefineMacro(ss, "TEXTURE_FILTERING", texture_filtering != GPUTextureFilter::Nearest);
   DefineMacro(ss, "TEXTURE_ALPHA_BLENDING", is_blended_texture_filtering);
+  DefineMacro(ss, "FILTER_NEAREST_COVERAGE",
+              filter_nearest_coverage && texture_filtering != GPUTextureFilter::Nearest);
   DefineMacro(ss, "UV_LIMITS", uv_limits);
   DefineMacro(ss, "USE_ROV", use_rov);
   DefineMacro(ss, "USE_ROV_DEPTH", use_rov_depth);
@@ -2463,8 +2465,23 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
       #else
         FilteredSampleFromVRAM(v_texpage, v_tex0, v_uv_limits, texcol, ialpha);
       #endif
-      if (ialpha < 0.5)
-        discard;
+      #if FILTER_NEAREST_COVERAGE
+        // Decide coverage and semitransparency from the exact center texel, so that filtering never
+        // erodes sprite silhouettes and reveals occluded texels behind layered 2D backgrounds
+        // (e.g. matte garbage around FF7 field layers). Only the color is filtered.
+        #if PAGE_TEXTURE
+          float4 ncol = SampleFromPageTexture(DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
+        #else
+          float4 ncol = SampleFromVRAM(v_texpage, DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
+        #endif
+        if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
+          discard;
+        ialpha = 1.0;
+        texcol.a = ncol.a;
+      #else
+        if (ialpha < 0.5)
+          discard;
+      #endif
     #else
       texcol = SampleFromVRAM(v_texpage, DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
       if (VECTOR_EQ(texcol, TRANSPARENT_PIXEL_COLOR))
