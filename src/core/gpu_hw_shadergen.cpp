@@ -2389,18 +2389,19 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
 {
   float4 color = SampleFromVRAMRaw(texpage, DECLARE_UV_LIMITS(coords, uv_limits));
 #if FILTER_CHROMA_KEY
-  // Some games (e.g. FF7) leave chroma matte garbage (green/blue/cyan/magenta screens) next
-  // to real content in their layered background tiles. It is never visible with nearest
-  // sampling, but texture filtering blends it into content edges (tinted dashes), and
-  // transparent cut texels blend towards black (dark seams). Replace both with the exact
-  // center texel color, which makes such taps blend-neutral: filtering can neither tint nor
-  // darken content edges, and fully-matte regions render exactly as nearest.
-  bool matte = VECTOR_EQ(color, TRANSPARENT_PIXEL_COLOR) ||
-               (color.g >= 0.55 && color.r <= 0.28 && color.b <= 0.28 && color.g >= (2.0 * max(color.r, color.b))) ||
+  // Some games (e.g. FF7) leave chroma matte garbage (green/blue/cyan/magenta/red screens)
+  // next to real content in their layered background tiles. It is never visible with nearest
+  // sampling, but texture filtering blends it into content edges as tinted dashes. Replace
+  // matte taps with the exact center texel color, which makes them blend-neutral: filtering
+  // can neither tint nor darken content edges, and fully-matte regions render exactly as
+  // nearest. Transparent texels keep their standard filter behavior so that cut-out content
+  // (foliage, cursors) stays smoothed.
+  bool matte = (color.g >= 0.55 && color.r <= 0.28 && color.b <= 0.28 && color.g >= (2.0 * max(color.r, color.b))) ||
                (color.b >= 0.55 && color.r <= 0.28 && color.g <= 0.28 && color.b >= (2.0 * max(color.r, color.g))) ||
+               (color.r >= 0.55 && color.g <= 0.28 && color.b <= 0.28 && color.r >= (2.0 * max(color.g, color.b))) ||
                (color.g >= 0.55 && color.b >= 0.55 && color.r <= 0.28 && min(color.g, color.b) >= (2.0 * color.r)) ||
                (color.r >= 0.55 && color.b >= 0.55 && color.g <= 0.28 && min(color.r, color.b) >= (2.0 * color.g));
-  color = matte ? g_compat_center : color;
+  color = (matte && VECTOR_NEQ(color, TRANSPARENT_PIXEL_COLOR)) ? g_compat_center : color;
 #endif
   return color;
 }
