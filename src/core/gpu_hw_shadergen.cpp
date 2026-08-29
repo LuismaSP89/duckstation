@@ -2497,7 +2497,14 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
           discard;
         if (ialpha < 0.95)
-          texcol.rgb = ncol.rgb;
+        {
+          // Only reject the filtered color when it deviates strongly from the real texel -
+          // that's when matte pollution or failed transparency compensation shows up as
+          // tinted dashes or dark seam lines. Reasonable blends keep the smoothing.
+          float3 cdiff = abs(texcol.rgb - ncol.rgb);
+          if (max(cdiff.r, max(cdiff.g, cdiff.b)) > 0.15)
+            texcol.rgb = ncol.rgb;
+        }
         ialpha = 1.0;
         texcol.a = ncol.a;
       #else
