@@ -2485,7 +2485,10 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
       #if FILTER_NEAREST_COVERAGE
         // Decide coverage and semitransparency from the exact center texel, so that filtering never
         // erodes sprite silhouettes and reveals occluded texels behind layered 2D backgrounds
-        // (e.g. matte garbage around FF7 field layers). Only the color is filtered.
+        // (e.g. matte garbage around FF7 field layers). Only the color is filtered, and only where
+        // the filter neighborhood is fully opaque; at silhouettes the filtered color is polluted by
+        // transparent/matte taps (imperfect compensation shows up as dark seam lines along layer
+        // edges), so fall back to the exact texel color there.
         #if PAGE_TEXTURE
           float4 ncol = SampleFromVRAMRaw(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #else
@@ -2493,6 +2496,8 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         #endif
         if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
           discard;
+        if (ialpha < 0.95)
+          texcol.rgb = ncol.rgb;
         ialpha = 1.0;
         texcol.a = ncol.a;
       #else
