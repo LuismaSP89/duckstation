@@ -2381,33 +2381,23 @@ float4 SampleFromVRAMRaw(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords,
   #endif
 }
 
-#if FILTER_CHROMA_KEY
-GLOBAL float4 g_compat_center;
-GLOBAL bool g_compat_near_cut;
-#endif
-
 float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, float4 uv_limits))
 {
   float4 color = SampleFromVRAMRaw(texpage, DECLARE_UV_LIMITS(coords, uv_limits));
 #if FILTER_CHROMA_KEY
   // Some games (e.g. FF7) leave chroma matte garbage (green/blue/cyan/magenta/red screens)
   // next to real content in their layered background tiles. It is never visible with nearest
-  // sampling, but texture filtering blends it into content edges as tinted dashes. Replace
-  // matte taps with the exact center texel color, which makes them blend-neutral: filtering
-  // can neither tint nor darken content edges, and fully-matte regions render exactly as
-  // nearest. Transparent texels keep their standard filter behavior so that cut-out content
-  // (foliage, cursors) stays smoothed.
+  // sampling, but texture filtering blends it into content edges as tinted dashes. Treat matte
+  // taps as transparent: the filters' alpha compensation then removes their contribution, and
+  // any residual darkening is caught by the luminance floor in the entry point. Transparent
+  // texels keep their standard filter behavior so cut-out content (foliage, cursors) stays
+  // smoothed.
   bool matte = (color.g >= 0.55 && color.r <= 0.28 && color.b <= 0.28 && color.g >= (2.0 * max(color.r, color.b))) ||
                (color.b >= 0.55 && color.r <= 0.28 && color.g <= 0.28 && color.b >= (2.0 * max(color.r, color.g))) ||
                (color.r >= 0.55 && color.g <= 0.28 && color.b <= 0.28 && color.r >= (2.0 * max(color.g, color.b))) ||
                (color.g >= 0.55 && color.b >= 0.55 && color.r <= 0.28 && min(color.g, color.b) >= (2.0 * color.r)) ||
                (color.r >= 0.55 && color.b >= 0.55 && color.g <= 0.28 && min(color.r, color.b) >= (2.0 * color.g));
-  // Near-black fringe baked next to layer cuts bleeds as dark hairlines onto brighter surfaces.
-  // Only applies to pixels adjacent to a transparency cut, so dark detail inside contiguous art
-  // (brick mortar, outlines) keeps full filtering.
-  bool darkfringe = g_compat_near_cut && (max(color.r, max(color.g, color.b)) <= 0.18) &&
-                    ((g_compat_center.r + g_compat_center.g + g_compat_center.b) >= 1.2);
-  color = ((matte || darkfringe) && VECTOR_NEQ(color, TRANSPARENT_PIXEL_COLOR)) ? g_compat_center : color;
+  color = matte ? float4(0.0, 0.0, 0.0, 0.0) : color;
 #endif
   return color;
 }
@@ -2494,23 +2484,12 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
       ialpha = 1.0;
     #elif TEXTURE_FILTERING
       #if FILTER_NEAREST_COVERAGE
+        // Exact texel under this pixel, used for coverage and the luminance floor below.
         #if PAGE_TEXTURE
-          #define COMPAT_SAMPLE(xoff, yoff)                                                                            \
-            SampleFromVRAMRaw(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u),                                                     \
-                              DECLARE_UV_LIMITS(v_tex0 + float2(xoff, yoff), v_uv_limits))
+          float4 ncol = SampleFromVRAMRaw(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #else
-          #define COMPAT_SAMPLE(xoff, yoff)                                                                            \
-            SampleFromVRAMRaw(v_texpage, DECLARE_UV_LIMITS(v_tex0 + float2(xoff, yoff), v_uv_limits))
+          float4 ncol = SampleFromVRAMRaw(v_texpage, DECLARE_UV_LIMITS(v_tex0, v_uv_limits));
         #endif
-        float4 ncol = COMPAT_SAMPLE(0.0, 0.0);
-        #if FILTER_CHROMA_KEY
-          g_compat_center = ncol;
-          g_compat_near_cut = VECTOR_EQ(COMPAT_SAMPLE(1.0, 0.0), TRANSPARENT_PIXEL_COLOR) ||
-                              VECTOR_EQ(COMPAT_SAMPLE(-1.0, 0.0), TRANSPARENT_PIXEL_COLOR) ||
-                              VECTOR_EQ(COMPAT_SAMPLE(0.0, 1.0), TRANSPARENT_PIXEL_COLOR) ||
-                              VECTOR_EQ(COMPAT_SAMPLE(0.0, -1.0), TRANSPARENT_PIXEL_COLOR);
-        #endif
-        #undef COMPAT_SAMPLE
       #endif
       #if PAGE_TEXTURE
         FilteredSampleFromVRAM(VECTOR_BROADCAST(TEXPAGE_VALUE, 0u), v_tex0, v_uv_limits, texcol, ialpha);
