@@ -2506,10 +2506,12 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         FilteredSampleFromVRAM(v_texpage, v_tex0, v_uv_limits, texcol, ialpha);
       #endif
       #if FILTER_NEAREST_COVERAGE
-        // Filter-shaped binary coverage: the silhouette follows the filter (smooth cut-out edges on
-        // foliage/cursors), but pixels are always written opaque so edges never alpha-blend over
-        // occluded matte garbage behind layered backgrounds (e.g. FF7 fields).
-        if (ialpha < 0.5)
+        // Grow-only filter-shaped coverage: every texel that nearest sampling would draw stays
+        // drawn (eroding the silhouette would reveal occluded matte garbage behind layered
+        // backgrounds as colored dots), and the filter may additionally grow smooth cut-out
+        // edges outwards (foliage/cursors). Pixels are always written opaque so edges never
+        // alpha-blend over the occluded matte either.
+        if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR) && ialpha < 0.5)
           discard;
         ialpha = 1.0;
         if (VECTOR_NEQ(ncol, TRANSPARENT_PIXEL_COLOR))
