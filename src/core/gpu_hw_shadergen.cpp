@@ -2526,6 +2526,12 @@ float4 SampleFromVRAM(TEXPAGE_VALUE texpage, DECLARE_UV_LIMITS(float2 coords, fl
         // alpha-blend over the occluded matte either.
         if (VECTOR_EQ(ncol, TRANSPARENT_PIXEL_COLOR))
           discard;
+        // Luminance floor: matte taps and transparency compensation can only pollute edges by
+        // darkening them (matte replacements resolve towards dark); heavy darkening relative to
+        // the exact texel is never a legitimate smoothing result, so snap those pixels back to
+        // the exact color. Legitimate blends, tints and brightenings are untouched.
+        if ((texcol.r + texcol.g + texcol.b) < (0.5 * (ncol.r + ncol.g + ncol.b)))
+          texcol.rgb = ncol.rgb;
         ialpha = 1.0;
         texcol.a = ncol.a;
       #else
