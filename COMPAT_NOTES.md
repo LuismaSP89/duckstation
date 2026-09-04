@@ -1,10 +1,9 @@
 # VRAM Write Filtering + FF7/LoD Compat Mode — Branch Notes
 
-Custom DuckStation branch (`vram-write-filtering`, private repo
-`LuismaSP89/Duckstation_Luisma_Privado`) that makes texture filters (xBR etc.) apply to
-pre-rendered backgrounds, 2D images and FMVs like the old PeteOpenGL2Tweak xBRZ scaler did,
-plus a compatibility mode that makes filtering usable in Final Fantasy VII and The Legend of
-Dragoon without artifacts.
+Custom DuckStation branch (`vram-write-filtering`) that makes texture filters (xBR etc.)
+apply to pre-rendered backgrounds, 2D images and FMVs like the old PeteOpenGL2Tweak xBRZ
+scaler did, plus a compatibility mode that makes filtering usable in Final Fantasy VII and
+The Legend of Dragoon without artifacts.
 
 Maintained with the help of Claude (Anthropic). This file documents everything needed to
 understand and rebase the branch without any other context. The prebuilt Windows x64 ZIP is
@@ -77,9 +76,9 @@ support), 0.55/0.28/2× (chroma families).
 ## How to rebase onto upstream
 
 ```bash
-# once: clone this private repo (needs your GitHub auth) and add the official repo as upstream
-git clone https://github.com/LuismaSP89/Duckstation_Luisma_Privado.git
-cd Duckstation_Luisma_Privado
+# once: clone the repo hosting this branch and add the official repo as upstream
+git clone <url-of-this-repo>
+cd <repo-dir>
 git remote add upstream https://github.com/stenzek/duckstation.git
 
 # each update:
