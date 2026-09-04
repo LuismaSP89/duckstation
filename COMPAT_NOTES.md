@@ -1,12 +1,17 @@
 # VRAM Write Filtering + FF7/LoD Compat Mode — Branch Notes
 
-Custom DuckStation branch (`vram-write-filtering`, fork `LuismaSP89/duckstation`) that makes
-texture filters (xBR etc.) apply to pre-rendered backgrounds, 2D images and FMVs like the old
-PeteOpenGL2Tweak xBRZ scaler did, plus a compatibility mode that makes filtering usable in
-Final Fantasy VII and The Legend of Dragoon without artifacts.
+Custom DuckStation branch (`vram-write-filtering`, private repo
+`LuismaSP89/Duckstation_Luisma_Privado`) that makes texture filters (xBR etc.) apply to
+pre-rendered backgrounds, 2D images and FMVs like the old PeteOpenGL2Tweak xBRZ scaler did,
+plus a compatibility mode that makes filtering usable in Final Fantasy VII and The Legend of
+Dragoon without artifacts.
 
 Maintained with the help of Claude (Anthropic). This file documents everything needed to
-understand and rebase the branch without any other context.
+understand and rebase the branch without any other context. The prebuilt Windows x64 ZIP is
+attached to this repo's Releases; new pushes to the branch also build automatically via the
+GitHub Actions workflow in `.github/workflows/windows-x64-custom.yml` (artifact
+`duckstation-windows-x64-vram-write-filtering`, downloadable from each Actions run for 90
+days). Note: in a private repo, Actions minutes count against the account's free quota.
 
 ## What the branch adds
 
@@ -72,7 +77,12 @@ support), 0.55/0.28/2× (chroma families).
 ## How to rebase onto upstream
 
 ```bash
-git remote add upstream https://github.com/stenzek/duckstation.git   # once
+# once: clone this private repo (needs your GitHub auth) and add the official repo as upstream
+git clone https://github.com/LuismaSP89/Duckstation_Luisma_Privado.git
+cd Duckstation_Luisma_Privado
+git remote add upstream https://github.com/stenzek/duckstation.git
+
+# each update:
 git fetch upstream
 git checkout vram-write-filtering
 git rebase upstream/master
@@ -82,8 +92,10 @@ git push --force-with-lease origin vram-write-filtering
 ```
 
 The push triggers the Windows x64 build automatically (`windows-x64-custom.yml`); download the
-artifact from the Actions run. If upstream renames `SampleFromVRAM` or restructures the batch
-fragment shader, re-apply the concepts from the table above rather than the literal diff.
+artifact from the Actions run (or create a new Release with the ZIP for permanent storage:
+`gh release create <tag> --target vram-write-filtering <zip>`). If upstream renames
+`SampleFromVRAM` or restructures the batch fragment shader, re-apply the concepts from the
+table above rather than the literal diff.
 
 ## Verifying after a rebase
 
